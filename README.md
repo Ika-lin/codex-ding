@@ -1,4 +1,4 @@
-# Codex Peek
+# Codex ding!
 
 Codex Peek is a lightweight Windows tray app that shows a tiny desktop peek when a Codex conversation finishes.
 
