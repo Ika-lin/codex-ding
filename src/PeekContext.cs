@@ -242,43 +242,45 @@ namespace CodexPeek
             }
 
             var lines = text.Split(new[] { '\n' }, StringSplitOptions.RemoveEmptyEntries);
-            var sawCompletion = false;
+            var completedTurnId = "";
             foreach (var line in lines)
             {
-                var eventType = GetPayloadType(line);
-                if (eventType.Length == 0)
+                var payload = GetPayloadInfo(line);
+                if (payload.Type.Length == 0)
                 {
                     continue;
                 }
 
-                if (eventType == "task_started" ||
-                    eventType == "user_message" ||
-                    eventType == "turn_aborted" ||
-                    eventType == "thread_rolled_back")
+                if (payload.Type == "task_started" ||
+                    payload.Type == "user_message" ||
+                    payload.Type == "turn_aborted" ||
+                    payload.Type == "thread_rolled_back")
                 {
-                    state.SeenFinalAnswer = false;
+                    state.FinalAnswerTurnId = "";
                     continue;
                 }
 
-                if (eventType == "final_answer")
+                if (payload.Type == "final_answer" && payload.TurnId.Length > 0)
                 {
-                    state.SeenFinalAnswer = true;
+                    state.FinalAnswerTurnId = payload.TurnId;
                     continue;
                 }
 
-                if (eventType == "task_complete" && state.SeenFinalAnswer)
+                if (payload.Type == "task_complete" &&
+                    payload.TurnId.Length > 0 &&
+                    String.Equals(payload.TurnId, state.FinalAnswerTurnId, StringComparison.Ordinal))
                 {
-                    sawCompletion = true;
-                    state.SeenFinalAnswer = false;
+                    completedTurnId = payload.TurnId;
+                    state.FinalAnswerTurnId = "";
                 }
             }
 
-            if (!sawCompletion)
+            if (completedTurnId.Length == 0)
             {
                 return false;
             }
 
-            fingerprint = path + "|incremental_complete|" + endPosition.ToString();
+            fingerprint = path + "|incremental_complete|" + completedTurnId + "|" + endPosition.ToString();
             return true;
         }
 
@@ -293,94 +295,128 @@ namespace CodexPeek
 
             var lines = tail.Split(new[] { '\n' }, StringSplitOptions.RemoveEmptyEntries);
             var lastTaskCompleteIndex = -1;
-            var lastFinalAnswerIndex = -1;
+            var lastTaskCompleteTurnId = "";
 
             for (var i = lines.Length - 1; i >= 0; i--)
             {
                 var line = lines[i];
-                var eventType = GetPayloadType(line);
-                if (eventType.Length == 0)
+                var payload = GetPayloadInfo(line);
+                if (payload.Type.Length == 0)
                 {
                     continue;
                 }
 
-                if (eventType == "task_complete")
+                if (payload.Type == "task_complete" && payload.TurnId.Length > 0)
                 {
                     lastTaskCompleteIndex = i;
+                    lastTaskCompleteTurnId = payload.TurnId;
                     continue;
                 }
 
-                if (eventType == "final_answer")
+                if (payload.Type == "final_answer" &&
+                    String.Equals(payload.TurnId, lastTaskCompleteTurnId, StringComparison.Ordinal))
                 {
-                    lastFinalAnswerIndex = i;
                     break;
                 }
             }
 
-            if (lastTaskCompleteIndex < 0)
+            if (lastTaskCompleteIndex < 0 || lastTaskCompleteTurnId.Length == 0)
             {
                 return false;
             }
 
-            if (lastFinalAnswerIndex < 0 || lastFinalAnswerIndex > lastTaskCompleteIndex)
+            var hasMatchingFinalAnswer = false;
+            for (var i = lastTaskCompleteIndex - 1; i >= 0; i--)
+            {
+                var payload = GetPayloadInfo(lines[i]);
+                if (payload.Type == "final_answer" &&
+                    String.Equals(payload.TurnId, lastTaskCompleteTurnId, StringComparison.Ordinal))
+                {
+                    hasMatchingFinalAnswer = true;
+                    break;
+                }
+            }
+
+            if (!hasMatchingFinalAnswer)
             {
                 return false;
             }
 
-            fingerprint = path + "|final_answer_complete|" + CountLinesUpTo(lines, lastTaskCompleteIndex).ToString();
+            fingerprint = path + "|final_answer_complete|" + lastTaskCompleteTurnId + "|" + CountLinesUpTo(lines, lastTaskCompleteIndex).ToString();
             return true;
         }
 
-        private static string GetPayloadType(string line)
+        private static PayloadInfo GetPayloadInfo(string line)
         {
-            if (Regex.IsMatch(line, "\"phase\"\\s*:\\s*\"final_answer\"") &&
+            if (Regex.IsMatch(line, "\"type\"\\s*:\\s*\"response_item\"") &&
+                Regex.IsMatch(line, "\"type\"\\s*:\\s*\"message\"") &&
+                Regex.IsMatch(line, "\"phase\"\\s*:\\s*\"final_answer\"") &&
                 Regex.IsMatch(line, "\"role\"\\s*:\\s*\"assistant\""))
             {
-                return "final_answer";
+                return new PayloadInfo("final_answer", ExtractTurnId(line));
             }
-            if (Regex.IsMatch(line, "\"phase\"\\s*:\\s*\"commentary\"") &&
+            if (Regex.IsMatch(line, "\"type\"\\s*:\\s*\"response_item\"") &&
+                Regex.IsMatch(line, "\"type\"\\s*:\\s*\"message\"") &&
+                Regex.IsMatch(line, "\"phase\"\\s*:\\s*\"commentary\"") &&
                 Regex.IsMatch(line, "\"role\"\\s*:\\s*\"assistant\""))
             {
-                return "assistant_commentary";
+                return new PayloadInfo("assistant_commentary", ExtractTurnId(line));
             }
-            if (Regex.IsMatch(line, "\"phase\"\\s*:\\s*\"analysis\"") &&
+            if (Regex.IsMatch(line, "\"type\"\\s*:\\s*\"response_item\"") &&
+                Regex.IsMatch(line, "\"type\"\\s*:\\s*\"message\"") &&
+                Regex.IsMatch(line, "\"phase\"\\s*:\\s*\"analysis\"") &&
                 Regex.IsMatch(line, "\"role\"\\s*:\\s*\"assistant\""))
             {
-                return "assistant_analysis";
+                return new PayloadInfo("assistant_analysis", ExtractTurnId(line));
             }
-            if (Regex.IsMatch(line, "\"type\"\\s*:\\s*\"task_complete\""))
+            if (Regex.IsMatch(line, "\"type\"\\s*:\\s*\"event_msg\"") &&
+                Regex.IsMatch(line, "\"payload\"\\s*:\\s*\\{\\s*\"type\"\\s*:\\s*\"task_complete\""))
             {
-                return "task_complete";
+                return new PayloadInfo("task_complete", ExtractTurnId(line));
             }
-            if (Regex.IsMatch(line, "\"type\"\\s*:\\s*\"task_started\""))
+            if (Regex.IsMatch(line, "\"type\"\\s*:\\s*\"event_msg\"") &&
+                Regex.IsMatch(line, "\"payload\"\\s*:\\s*\\{\\s*\"type\"\\s*:\\s*\"task_started\""))
             {
-                return "task_started";
+                return new PayloadInfo("task_started", ExtractTurnId(line));
             }
-            if (Regex.IsMatch(line, "\"type\"\\s*:\\s*\"user_message\""))
+            if (Regex.IsMatch(line, "\"type\"\\s*:\\s*\"event_msg\"") &&
+                Regex.IsMatch(line, "\"payload\"\\s*:\\s*\\{\\s*\"type\"\\s*:\\s*\"user_message\""))
             {
-                return "user_message";
+                return new PayloadInfo("user_message", ExtractTurnId(line));
             }
-            if (Regex.IsMatch(line, "\"type\"\\s*:\\s*\"turn_aborted\""))
+            if (Regex.IsMatch(line, "\"type\"\\s*:\\s*\"event_msg\"") &&
+                Regex.IsMatch(line, "\"payload\"\\s*:\\s*\\{\\s*\"type\"\\s*:\\s*\"turn_aborted\""))
             {
-                return "turn_aborted";
+                return new PayloadInfo("turn_aborted", ExtractTurnId(line));
             }
-            if (Regex.IsMatch(line, "\"type\"\\s*:\\s*\"thread_rolled_back\""))
+            if (Regex.IsMatch(line, "\"type\"\\s*:\\s*\"event_msg\"") &&
+                Regex.IsMatch(line, "\"payload\"\\s*:\\s*\\{\\s*\"type\"\\s*:\\s*\"thread_rolled_back\""))
             {
-                return "thread_rolled_back";
+                return new PayloadInfo("thread_rolled_back", ExtractTurnId(line));
             }
-            if (Regex.IsMatch(line, "\"type\"\\s*:\\s*\"token_count\""))
+            if (Regex.IsMatch(line, "\"type\"\\s*:\\s*\"event_msg\"") &&
+                Regex.IsMatch(line, "\"payload\"\\s*:\\s*\\{\\s*\"type\"\\s*:\\s*\"token_count\""))
             {
-                return "token_count";
+                return new PayloadInfo("token_count", ExtractTurnId(line));
             }
             if (Regex.IsMatch(line, "\"type\"\\s*:\\s*\"turn_context\""))
             {
-                return "turn_context";
+                return new PayloadInfo("turn_context", ExtractTurnId(line));
             }
-            if (Regex.IsMatch(line, "\"role\"\\s*:\\s*\"user\""))
+
+            if (Regex.IsMatch(line, "\"type\"\\s*:\\s*\"response_item\"") &&
+                Regex.IsMatch(line, "\"type\"\\s*:\\s*\"message\"") &&
+                Regex.IsMatch(line, "\"role\"\\s*:\\s*\"user\""))
             {
-                return "user_message";
+                return new PayloadInfo("user_message", ExtractTurnId(line));
             }
-            return "";
+            return new PayloadInfo("", "");
+        }
+
+        private static string ExtractTurnId(string line)
+        {
+            var match = Regex.Match(line, "\"turn_id\"\\s*:\\s*\"([^\"]+)\"");
+            return match.Success ? match.Groups[1].Value : "";
         }
 
         private static int CountLinesUpTo(string[] lines, int index)
@@ -546,7 +582,19 @@ namespace CodexPeek
         private sealed class RolloutState
         {
             public long Position;
-            public bool SeenFinalAnswer;
+            public string FinalAnswerTurnId = "";
+        }
+
+        private sealed class PayloadInfo
+        {
+            public readonly string Type;
+            public readonly string TurnId;
+
+            public PayloadInfo(string type, string turnId)
+            {
+                Type = type;
+                TurnId = turnId;
+            }
         }
     }
 }
