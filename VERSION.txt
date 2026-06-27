@@ -1,4 +1,4 @@
-Codex Ding v0.1.1
+Codex Ding v0.1.2
 
 Portable Windows tray app.
 Built for local Codex completion notifications.

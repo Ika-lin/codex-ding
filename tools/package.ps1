@@ -1,7 +1,7 @@
 $ErrorActionPreference = "Stop"
 
 $root = Split-Path -Parent (Split-Path -Parent $MyInvocation.MyCommand.Path)
-$version = "v0.1.1"
+$version = "v0.1.2"
 $dist = Join-Path $root "dist"
 $stage = Join-Path $dist "CodexPeek-$version"
 $zip = Join-Path $dist "CodexPeek-$version-portable.zip"

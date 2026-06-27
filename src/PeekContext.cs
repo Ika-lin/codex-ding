@@ -252,26 +252,44 @@ namespace CodexPeek
                 }
 
                 if (payload.Type == "task_started" ||
-                    payload.Type == "user_message" ||
-                    payload.Type == "turn_aborted" ||
-                    payload.Type == "thread_rolled_back")
+                    payload.Type == "user_message")
                 {
                     state.FinalAnswerTurnId = "";
+                    if (payload.TurnId.Length > 0)
+                    {
+                        state.ActiveTurnId = payload.TurnId;
+                        state.IsArmed = true;
+                    }
                     continue;
                 }
 
-                if (payload.Type == "final_answer" && payload.TurnId.Length > 0)
+                if (payload.Type == "turn_aborted" ||
+                    payload.Type == "thread_rolled_back")
+                {
+                    state.ActiveTurnId = "";
+                    state.FinalAnswerTurnId = "";
+                    state.IsArmed = false;
+                    continue;
+                }
+
+                if (payload.Type == "final_answer" &&
+                    state.IsArmed &&
+                    payload.TurnId.Length > 0 &&
+                    String.Equals(payload.TurnId, state.ActiveTurnId, StringComparison.Ordinal))
                 {
                     state.FinalAnswerTurnId = payload.TurnId;
                     continue;
                 }
 
                 if (payload.Type == "task_complete" &&
+                    state.IsArmed &&
                     payload.TurnId.Length > 0 &&
                     String.Equals(payload.TurnId, state.FinalAnswerTurnId, StringComparison.Ordinal))
                 {
                     completedTurnId = payload.TurnId;
+                    state.ActiveTurnId = "";
                     state.FinalAnswerTurnId = "";
+                    state.IsArmed = false;
                 }
             }
 
@@ -582,7 +600,9 @@ namespace CodexPeek
         private sealed class RolloutState
         {
             public long Position;
+            public string ActiveTurnId = "";
             public string FinalAnswerTurnId = "";
+            public bool IsArmed;
         }
 
         private sealed class PayloadInfo
