@@ -4,6 +4,8 @@ Codex Peek is a lightweight Windows tray app that shows a tiny desktop peek when
 
 It runs locally, watches Codex session files, and only reacts after an assistant final answer is completed.
 
+Chinese usage guide: [USAGE.zh-CN.md](USAGE.zh-CN.md)
+
 ## What It Does
 
 - Shows a floating PNG emoji/image when Codex finishes replying.
@@ -57,6 +59,21 @@ soundPath=assets/pop.mp3
 ```
 
 Use transparent PNG files for images. WAV sounds start fastest; MP3 sounds work but may have a tiny startup delay.
+
+## User Asset Folders
+
+Codex Peek keeps user-facing assets in two simple folders:
+
+```text
+emojis/
+sounds/
+```
+
+- Put PNG emoji images in `emojis/`.
+- Put WAV or MP3 sound effects in `sounds/`.
+- Open `Settings...` from the tray icon to choose them.
+
+The `assets/` folder is for bundled defaults used by the app.
 
 ## Test
 

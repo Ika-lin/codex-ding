@@ -175,7 +175,8 @@ namespace CodexPeek
             var dialog = new WinForms.OpenFileDialog
             {
                 Title = "Choose image",
-                Filter = "PNG images (*.png)|*.png|All files (*.*)|*.*"
+                Filter = "PNG images (*.png)|*.png|All files (*.*)|*.*",
+                InitialDirectory = ChooseInitialDirectory("emojis")
             };
             if (dialog.ShowDialog() == WinForms.DialogResult.OK)
             {
@@ -188,7 +189,8 @@ namespace CodexPeek
             var dialog = new WinForms.OpenFileDialog
             {
                 Title = "Choose sound",
-                Filter = "Audio files (*.wav;*.mp3)|*.wav;*.mp3|All files (*.*)|*.*"
+                Filter = "Audio files (*.wav;*.mp3)|*.wav;*.mp3|All files (*.*)|*.*",
+                InitialDirectory = ChooseInitialDirectory("sounds")
             };
             if (dialog.ShowDialog() == WinForms.DialogResult.OK)
             {
@@ -262,6 +264,12 @@ namespace CodexPeek
             }
             path = Environment.ExpandEnvironmentVariables(path.Trim());
             return Path.IsPathRooted(path) ? path : Path.Combine(config.AppDir, path);
+        }
+
+        private string ChooseInitialDirectory(string folderName)
+        {
+            var folder = Path.Combine(config.AppDir, folderName);
+            return Directory.Exists(folder) ? folder : config.AppDir;
         }
     }
 }
